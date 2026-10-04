@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quiz Builder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Layout: one centred column, two tabs (Questions / Take quiz); form and list stack on phones, sit side by side on wide screens. */
+:root {
+  --bg: #eceff4;
+  --surface: #ffffff;
+  --surface-2: #f3f5f9;
+  --line: #d5dbe5;
+  --fg: #151a23;
+  --muted: #5b6577;
+  --accent: #2446e8;
+  --accent-fg: #ffffff;
+  --good: #137a45;
+  --good-bg: #e3f4ea;
+  --bad: #b4281f;
+  --bad-bg: #fbe8e6;
+  --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #10141c; --surface: #181e29; --surface-2: #1f2633; --line: #2f3849;
+    --fg: #e8ecf3; --muted: #9aa5b8; --accent: #6f8bff; --accent-fg: #0b1020;
+    --good: #5fd195; --good-bg: #153424; --bad: #ff8d84; --bad-bg: #3a1a18;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #10141c; --surface: #181e29; --surface-2: #1f2633; --line: #2f3849;
+  --fg: #e8ecf3; --muted: #9aa5b8; --accent: #6f8bff; --accent-fg: #0b1020;
+  --good: #5fd195; --good-bg: #153424; --bad: #ff8d84; --bad-bg: #3a1a18;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.5; padding-inline: 16px; padding-block: 24px 48px; }
+.wrap { max-width: 980px; margin-inline: auto; display: flex; flex-direction: column; gap: 20px; }
+header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px; }
+h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(1.8rem, 5vw, 2.6rem); line-height: 1.05; margin: 0; letter-spacing: -0.02em; text-wrap: balance; }
+.sub { color: var(--muted); margin: 6px 0 0; }
+.tabs { display: flex; gap: 4px; background: var(--surface-2); border: 1px solid var(--line); padding: 4px; border-radius: 10px; }
+.tab { font: inherit; font-weight: 600; border: 0; background: transparent; color: var(--muted); padding: 8px 14px; border-radius: 7px; cursor: pointer; min-height: 40px; }
+.tab[aria-selected="true"] { background: var(--surface); color: var(--fg); box-shadow: 0 1px 2px rgb(0 0 0 / .12); }
+.tab .count { font-family: var(--font-mono); font-size: .8rem; margin-left: 6px; color: var(--accent); }
+button:focus-visible, input:focus-visible, textarea:focus-visible, label:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.builder { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 760px) { .builder { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; min-width: 0; }
+.panel h2 { font-family: var(--font-display); font-size: 1.25rem; margin: 0 0 14px; font-weight: 600; }
+.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.field > label, .legend { font-size: .78rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+textarea, input[type="text"] { font: inherit; color: var(--fg); background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; width: 100%; min-width: 0; }
+textarea { resize: vertical; min-height: 76px; }
+.opt-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 10px; align-items: center; margin-bottom: 8px; }
+.letter { font-family: var(--font-mono); font-weight: 500; width: 28px; height: 28px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--line); display: grid; place-items: center; font-size: .85rem; }
+.correct-pick { display: flex; align-items: center; gap: 6px; font-size: .82rem; color: var(--muted); white-space: nowrap; cursor: pointer; min-height: 40px; }
+.correct-pick input { accent-color: var(--accent); width: 18px; height: 18px; margin: 0; }
+.opt-row:has(input[type="radio"]:checked) .letter { background: var(--good-bg); border-color: var(--good); color: var(--good); }
+.opt-row:has(input[type="radio"]:checked) .correct-pick { color: var(--good); font-weight: 600; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.btn { font: inherit; font-weight: 600; border-radius: 8px; padding: 10px 16px; min-height: 42px; cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--fg); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.btn.small { min-height: 34px; padding: 6px 10px; font-size: .85rem; }
+.btn.danger { color: var(--bad); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.msg { font-size: .88rem; color: var(--bad); min-height: 1.3em; margin: 0 0 10px; }
+.msg.ok { color: var(--good); }
+
+.list-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.list-head h2 { margin: 0; }
+.qlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.qitem { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: var(--surface-2); min-width: 0; }
+.qitem.editing { border-color: var(--accent); }
+.qtop { display: flex; gap: 10px; align-items: start; }
+.qnum { font-family: var(--font-mono); color: var(--accent); font-size: .85rem; padding-top: 2px; }
+.qtext { margin: 0; font-weight: 500; overflow-wrap: anywhere; min-width: 0; }
+.qmeta { margin: 8px 0 0 0; padding-left: 26px; color: var(--muted); font-size: .85rem; overflow-wrap: anywhere; }
+.qmeta b { color: var(--good); font-weight: 600; }
+.qactions { display: flex; gap: 8px; margin: 10px 0 0 26px; flex-wrap: wrap; align-items: center; }
+.confirm-text { font-size: .85rem; color: var(--bad); }
+.empty { color: var(--muted); border: 1px dashed var(--line); border-radius: 10px; padding: 22px; text-align: center; }
+.tag { font-size: .7rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; margin-left: 8px; white-space: nowrap; }
+
+.play { max-width: 680px; width: 100%; margin-inline: auto; }
+.progress { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; font-family: var(--font-mono); font-size: .85rem; color: var(--muted); }
+.bar { flex: 1; height: 6px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 99px; overflow: hidden; }
+.bar > span { display: block; height: 100%; background: var(--accent); transition: width .25s ease; }
+.question { font-family: var(--font-display); font-weight: 600; font-size: clamp(1.25rem, 3.6vw, 1.6rem); line-height: 1.25; margin: 0 0 18px; text-wrap: balance; overflow-wrap: anywhere; }
+.choices { display: flex; flex-direction: column; gap: 10px; }
+.choice { font: inherit; text-align: left; display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 12px; align-items: center; background: var(--surface-2); color: var(--fg); border: 1px solid var(--line); border-radius: 10px; padding: 12px; cursor: pointer; min-height: 52px; }
+.choice .letter { background: var(--surface); width: 30px; height: 30px; }
+.choice span:last-child { overflow-wrap: anywhere; }
+.choice:hover:not(:disabled) { border-color: var(--accent); }
+.choice:disabled { cursor: default; }
+.choice.right { background: var(--good-bg); border-color: var(--good); }
+.choice.right .letter { background: var(--good); color: var(--surface); border-color: var(--good); }
+.choice.wrong { background: var(--bad-bg); border-color: var(--bad); }
+.choice.wrong .letter { background: var(--bad); color: var(--surface); border-color: var(--bad); }
+.verdict { margin: 16px 0 0; font-weight: 600; }
+.verdict.good { color: var(--good); }
+.verdict.bad { color: var(--bad); }
+.explain { margin: 8px 0 0; padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; overflow-wrap: anywhere; }
+.explain .legend { display: block; margin-bottom: 4px; }
+.play-actions { margin-top: 16px; display: flex; justify-content: flex-end; }
+.score { font-family: var(--font-display); font-weight: 800; font-size: clamp(2.6rem, 10vw, 4rem); line-height: 1; margin: 6px 0 4px; letter-spacing: -0.03em; }
+.review { list-style: none; padding: 0; margin: 18px 0 0; display: flex; flex-direction: column; gap: 8px; }
+.review li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); overflow-wrap: anywhere; }
+.review .mark { font-weight: 700; }
+.review .ok { color: var(--good); }
+.review .no { color: var(--bad); }
+.review small { display: block; color: var(--muted); margin-top: 2px; }
+.shuffle { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: .9rem; margin-top: 12px; cursor: pointer; }
+.shuffle input { accent-color: var(--accent); width: 18px; height: 18px; }
+@media (prefers-reduced-motion: reduce) { .bar > span { transition: none; } }
+[hidden] { display: none !important; }
+</style>
+
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Quiz Builder</h1>
+      <p class="sub">Write multiple-choice questions with an explanation, then take the quiz.</p>
+    </div>
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" id="tab-build" aria-selected="true" aria-controls="view-build">Questions<span class="count" id="count">0</span></button>
+      <button class="tab" role="tab" id="tab-play" aria-selected="false" aria-controls="view-play">Take quiz</button>
+    </div>
+  </header>
+
+  <section id="view-build" role="tabpanel" aria-labelledby="tab-build" class="builder">
+    <form class="panel" id="form" novalidate>
+      <h2 id="form-title">Add a question</h2>
+      <div class="field">
+        <label for="q">Question</label>
+        <textarea id="q" placeholder="Type the question here"></textarea>
+      </div>
+      <div class="field">
+        <span class="legend">Options (pick the correct one)</span>
+        <div id="opts"></div>
+      </div>
+      <div class="field">
+        <label for="exp">Explanation</label>
+        <textarea id="exp" placeholder="Why is that answer correct? Shown after the player answers."></textarea>
+      </div>
+      <p class="msg" id="msg" role="status"></p>
+      <div class="actions">
+        <button class="btn primary" type="submit" id="save">Add question</button>
+        <button class="btn" type="button" id="cancel" hidden>Cancel edit</button>
+      </div>
+    </form>
+
+    <div class="panel">
+      <div class="list-head">
+        <h2>Your questions</h2>
+        <button class="btn small" type="button" id="start-top">Take quiz</button>
+      </div>
+      <ul class="qlist" id="list"></ul>
+    </div>
+  </section>
+
+  <section id="view-play" role="tabpanel" aria-labelledby="tab-play" hidden>
+    <div class="panel play" id="play"></div>
+  </section>
+</div>
+
+<script>
+(function () {
+  var KEY = "quiz-builder-v1";
+  var LETTERS = ["A", "B", "C", "D"];
+  var SAMPLES = [
+    { id: "s1", sample: true, q: "Which pandas method returns the first five rows of a DataFrame by default?", opts: ["df.top()", "df.head()", "df.first()", "df.start()"], correct: 1, exp: "df.head() returns the first n rows and n defaults to 5. Use df.tail() for the last rows." },
+    { id: "s2", sample: true, q: "In SQL, which clause filters groups after a GROUP BY?", opts: ["WHERE", "FILTER", "HAVING", "LIMIT"], correct: 2, exp: "WHERE filters rows before grouping. HAVING filters the groups produced by GROUP BY, for example HAVING COUNT(*) > 10." },
+    { id: "s3", sample: true, q: "What does a Pearson correlation of -0.9 between two columns suggest?", opts: ["No relationship", "A strong positive relationship", "A strong negative relationship", "The data has outliers"], correct: 2, exp: "Values near -1 mean a strong negative linear relationship: when one variable rises, the other tends to fall." }
+  ];
+
+  var questions = load();
+  var editingId = null;
+  var pendingDelete = null;
+  var quiz = null;
+  var shuffleOn = false;
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  function load() {
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (raw) { var d = JSON.parse(raw); if (Array.isArray(d)) return d; }
+    } catch (e) {}
+    return SAMPLES.map(function (s) { return JSON.parse(JSON.stringify(s)); });
+  }
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(questions)); } catch (e) {} }
+  function uid() { return "q" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+  function el(tag, cls, text) { var n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
+
+  /* ---------- builder form ---------- */
+  function buildOptionRows() {
+    var host = $("opts");
+    host.innerHTML = "";
+    LETTERS.forEach(function (L, i) {
+      var row = el("div", "opt-row");
+      row.appendChild(el("span", "letter", L));
+      var inp = document.createElement("input");
+      inp.type = "text"; inp.id = "opt" + i; inp.placeholder = "Option " + L;
+      inp.setAttribute("aria-label", "Option " + L);
+      row.appendChild(inp);
+      var lab = el("label", "correct-pick");
+      var r = document.createElement("input");
+      r.type = "radio"; r.name = "correct"; r.value = String(i); r.id = "correct" + i;
+      if (i === 0) r.checked = true;
+      lab.appendChild(r);
+      lab.appendChild(el("span", null, "Correct"));
+      row.appendChild(lab);
+      host.appendChild(row);
+    });
+  }
+  function setMsg(t, ok) { var m = $("msg"); m.textContent = t || ""; m.className = "msg" + (ok ? " ok" : ""); }
+  function resetForm() {
+    editingId = null;
+    $("q").value = ""; $("exp").value = "";
+    LETTERS.forEach(function (_, i) { $("opt" + i).value = ""; });
+    $("correct0").checked = true;
+    $("form-title").textContent = "Add a question";
+    $("save").textContent = "Add question";
+    $("cancel").hidden = true;
+  }
+  function startEdit(id) {
+    var item = questions.find(function (x) { return x.id === id; });
+    if (!item) return;
+    editingId = id; pendingDelete = null;
+    $("q").value = item.q; $("exp").value = item.exp;
+    item.opts.forEach(function (o, i) { $("opt" + i).value = o; });
+    $("correct" + item.correct).checked = true;
+    $("form-title").textContent = "Edit question";
+    $("save").textContent = "Update question";
+    $("cancel").hidden = false;
+    setMsg("");
+    renderList();
+    $("q").focus();
+    $("form").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  $("form").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var q = $("q").value.trim();
+    var opts = LETTERS.map(function (_, i) { return $("opt" + i).value.trim(); });
+    var exp = $("exp").value.trim();
+    var correct = 0;
+    LETTERS.forEach(function (_, i) { if ($("correct" + i).checked) correct = i; });
+    if (!q) { setMsg("Enter the question."); $("q").focus(); return; }
+    var empty = opts.findIndex(function (o) { return !o; });
+    if (empty !== -1) { setMsg("Fill in option " + LETTERS[empty] + ". All four options are required."); $("opt" + empty).focus(); return; }
+    if (!exp) { setMsg("Add an explanation so players learn why the answer is correct."); $("exp").focus(); return; }
+    if (editingId) {
+      var item = questions.find(function (x) { return x.id === editingId; });
+      item.q = q; item.opts = opts; item.correct = correct; item.exp = exp; delete item.sample;
+      setMsg("Question updated.", true);
+    } else {
+      questions.push({ id: uid(), q: q, opts: opts, correct: correct, exp: exp });
+      setMsg("Question added.", true);
+    }
+    save(); resetForm(); renderList();
+    $("q").focus();
+  });
+  $("cancel").addEventListener("click", function () { resetForm(); setMsg(""); renderList(); });
+
+  function renderList() {
+    $("count").textContent = questions.length;
+    var ul = $("list");
+    ul.innerHTML = "";
+    if (!questions.length) {
+      var li = el("li", "empty", "No questions yet. Fill in the form to add your first one.");
+      ul.appendChild(li);
+      $("start-top").disabled = true;
+      return;
+    }
+    $("start-top").disabled = false;
+    questions.forEach(function (item, idx) {
+      var li = el("li", "qitem" + (item.id === editingId ? " editing" : ""));
+      var top = el("div", "qtop");
+      top.appendChild(el("span", "qnum", String(idx + 1).padStart(2, "0")));
+      var t = el("p", "qtext", item.q);
+      if (item.sample) t.appendChild(el("span", "tag", "Example"));
+      top.appendChild(t);
+      li.appendChild(top);
+      var meta = el("p", "qmeta");
+      meta.appendChild(document.createTextNode("Answer: "));
+      meta.appendChild(el("b", null, LETTERS[item.correct] + ". " + item.opts[item.correct]));
+      li.appendChild(meta);
+      var acts = el("div", "qactions");
+      if (pendingDelete === item.id) {
+        acts.appendChild(el("span", "confirm-text", "Delete this question?"));
+        var yes = el("button", "btn small danger", "Delete"); yes.type = "button";
+        yes.addEventListener("click", function () {
+          questions = questions.filter(function (x) { return x.id !== item.id; });
+          if (editingId === item.id) resetForm();
+          pendingDelete = null; save(); renderList();
+        });
+        var no = el("button", "btn small", "Keep"); no.type = "button";
+        no.addEventListener("click", function () { pendingDelete = null; renderList(); });
+        acts.appendChild(yes); acts.appendChild(no);
+      } else {
+        var ed = el("button", "btn small", "Edit"); ed.type = "button";
+        ed.addEventListener("click", function () { startEdit(item.id); });
+        var del = el("button", "btn small danger", "Delete"); del.type = "button";
+        del.addEventListener("click", function () { pendingDelete = item.id; renderList(); });
+        acts.appendChild(ed); acts.appendChild(del);
+      }
+      li.appendChild(acts);
+      ul.appendChild(li);
+    });
+  }
+
+  /* ---------- tabs ---------- */
+  function showTab(name) {
+    var build = name === "build";
+    $("view-build").hidden = !build;
+    $("view-play").hidden = build;
+    $("tab-build").setAttribute("aria-selected", String(build));
+    $("tab-play").setAttribute("aria-selected", String(!build));
+    if (!build) renderPlayStart();
+  }
+  $("tab-build").addEventListener("click", function () { showTab("build"); });
+  $("tab-play").addEventListener("click", function () { showTab("play"); });
+  $("start-top").addEventListener("click", function () { showTab("play"); });
+
+  /* ---------- quiz ---------- */
+  function renderPlayStart() {
+    var host = $("play");
+    host.innerHTML = "";
+    quiz = null;
+    if (!questions.length) {
+      host.appendChild(el("div", "empty", "Add at least one question on the Questions tab to start."));
+      return;
+    }
+    host.appendChild(el("h2", null, "Ready?"));
+    host.appendChild(el("p", "sub", questions.length + (questions.length === 1 ? " question." : " questions.") + " You see the explanation after each answer."));
+    var lab = el("label", "shuffle");
+    var cb = document.createElement("input"); cb.type = "checkbox"; cb.id = "shuffle"; cb.checked = shuffleOn;
+    cb.addEventListener("change", function () { shuffleOn = cb.checked; });
+    lab.appendChild(cb); lab.appendChild(el("span", null, "Shuffle question order"));
+    host.appendChild(lab);
+    var row = el("div", "play-actions");
+    row.style.justifyContent = "flex-start";
+    var go = el("button", "btn primary", "Start quiz"); go.type = "button";
+    go.addEventListener("click", startQuiz);
+    row.appendChild(go);
+    host.appendChild(row);
+  }
+  function startQuiz() {
+    var order = questions.map(function (_, i) { return i; });
+    if (shuffleOn) {
+      for (var i = order.length - 1; i > 0; i--) {
+        var j = Math.floor(Math.random() * (i + 1));
+        var tmp = order[i]; order[i] = order[j]; order[j] = tmp;
+      }
+    }
+    quiz = { order: order, pos: 0, picks: [], answered: false };
+    renderQuestion();
+  }
+  function renderQuestion() {
+    var host = $("play");
+    host.innerHTML = "";
+    var item = questions[quiz.order[quiz.pos]];
+    var total = quiz.order.length;
+
+    var prog = el("div", "progress");
+    prog.appendChild(el("span", null, (quiz.pos + 1) + " / " + total));
+    var bar = el("div", "bar"); var fill = document.createElement("span");
+    fill.style.width = ((quiz.pos + (quiz.answered ? 1 : 0)) / total * 100) + "%";
+    bar.appendChild(fill); prog.appendChild(bar);
+    var right = quiz.picks.filter(function (p) { return p.ok; }).length;
+    prog.appendChild(el("span", null, "Score " + right));
+    host.appendChild(prog);
+
+    host.appendChild(el("h2", "question", item.q));
+    var choices = el("div", "choices");
+    var pick = quiz.answered ? quiz.picks[quiz.pos].choice : -1;
+    item.opts.forEach(function (o, i) {
+      var b = el("button", "choice"); b.type = "button";
+      b.appendChild(el("span", "letter", LETTERS[i]));
+      b.appendChild(el("span", null, o));
+      if (quiz.answered) {
+        b.disabled = true;
+        if (i === item.correct) b.classList.add("right");
+        else if (i === pick) b.classList.add("wrong");
+      } else {
+        b.addEventListener("click", function () { answer(i); });
+      }
+      choices.appendChild(b);
+    });
+    host.appendChild(choices);
+
+    if (quiz.answered) {
+      var ok = pick === item.correct;
+      host.appendChild(el("p", "verdict " + (ok ? "good" : "bad"), ok ? "Correct" : "Not quite. The answer is " + LETTERS[item.correct] + "."));
+      var ex = el("div", "explain");
+      ex.appendChild(el("span", "legend", "Explanation"));
+      ex.appendChild(el("span", null, item.exp));
+      host.appendChild(ex);
+      var row = el("div", "play-actions");
+      var last = quiz.pos === total - 1;
+      var next = el("button", "btn primary", last ? "See results" : "Next question"); next.type = "button";
+      next.addEventListener("click", function () {
+        if (last) renderResults(); else { quiz.pos++; quiz.answered = false; renderQuestion(); }
+      });
+      row.appendChild(next); host.appendChild(row);
+      next.focus();
+    }
+  }
+  function answer(i) {
+    var item = questions[quiz.order[quiz.pos]];
+    quiz.picks[quiz.pos] = { choice: i, ok: i === item.correct };
+    quiz.answered = true;
+    renderQuestion();
+  }
+  function renderResults() {
+    var host = $("play");
+    host.innerHTML = "";
+    var total = quiz.order.length;
+    var right = quiz.picks.filter(function (p) { return p.ok; }).length;
+    var pct = Math.round(right / total * 100);
+    host.appendChild(el("span", "legend", "Result"));
+    host.appendChild(el("div", "score", right + " / " + total));
+    host.appendChild(el("p", "sub", pct + "% correct"));
+    var ul = el("ul", "review");
+    quiz.order.forEach(function (qi, n) {
+      var item = questions[qi]; var p = quiz.picks[n];
+      var li = el("li");
+      li.appendChild(el("span", "mark " + (p.ok ? "ok" : "no"), p.ok ? "✓" : "✗"));
+      var d = el("div");
+      d.appendChild(document.createTextNode(item.q));
+      if (!p.ok) d.appendChild(el("small", null, "You chose " + LETTERS[p.choice] + ". Correct: " + LETTERS[item.correct] + ". " + item.opts[item.correct]));
+      li.appendChild(d); ul.appendChild(li);
+    });
+    host.appendChild(ul);
+    var row = el("div", "play-actions");
+    var again = el("button", "btn primary", "Try again"); again.type = "button";
+    again.addEventListener("click", startQuiz);
+    var back = el("button", "btn", "Edit questions"); back.type = "button";
+    back.style.marginRight = "10px";
+    back.addEventListener("click", function () { showTab("build"); });
+    row.appendChild(back); row.appendChild(again);
+    host.appendChild(row);
+  }
+
+  buildOptionRows();
+  renderList();
+})();
+</script>
+</body>
+</html>
