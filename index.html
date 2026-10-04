@@ -1,8 +1,4 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
 <title>Quiz Builder</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -41,7 +37,7 @@
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.5; padding-inline: 16px; padding-block: 24px 48px; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.5; padding-inline: 16px; padding-block: 24px 48px; }
 .wrap { max-width: 980px; margin-inline: auto; display: flex; flex-direction: column; gap: 20px; }
 header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px; }
 h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(1.8rem, 5vw, 2.6rem); line-height: 1.05; margin: 0; letter-spacing: -0.02em; text-wrap: balance; }
@@ -122,10 +118,10 @@ textarea { resize: vertical; min-height: 76px; }
 .shuffle input { accent-color: var(--accent); width: 18px; height: 18px; }
 @media (prefers-reduced-motion: reduce) { .bar > span { transition: none; } }
 [hidden] { display: none !important; }
+.note { margin: -4px 0 12px; font-size: .82rem; color: var(--muted); min-height: 1.2em; }
+.empty .btn { margin-top: 12px; }
 </style>
 
-</head>
-<body>
 <div class="wrap">
   <header>
     <div>
@@ -165,6 +161,7 @@ textarea { resize: vertical; min-height: 76px; }
         <h2>Your questions</h2>
         <button class="btn small" type="button" id="start-top">Take quiz</button>
       </div>
+      <p class="note" id="store-note" role="status"></p>
       <ul class="qlist" id="list"></ul>
     </div>
   </section>
@@ -184,7 +181,10 @@ textarea { resize: vertical; min-height: 76px; }
     { id: "s3", sample: true, q: "What does a Pearson correlation of -0.9 between two columns suggest?", opts: ["No relationship", "A strong positive relationship", "A strong negative relationship", "The data has outliers"], correct: 2, exp: "Values near -1 mean a strong negative linear relationship: when one variable rises, the other tends to fall." }
   ];
 
-  var questions = load();
+  var questions = [];
+  var loading = true;
+  var col = null;            /* shared database collection, when available */
+  var migrationDone = false;
   var editingId = null;
   var pendingDelete = null;
   var quiz = null;
@@ -192,14 +192,64 @@ textarea { resize: vertical; min-height: 76px; }
 
   var $ = function (id) { return document.getElementById(id); };
 
-  function load() {
+  function clone(x) { return JSON.parse(JSON.stringify(x)); }
+  function localLoad() {
     try {
       var raw = localStorage.getItem(KEY);
       if (raw) { var d = JSON.parse(raw); if (Array.isArray(d)) return d; }
     } catch (e) {}
-    return SAMPLES.map(function (s) { return JSON.parse(JSON.stringify(s)); });
+    return null;
   }
-  function save() { try { localStorage.setItem(KEY, JSON.stringify(questions)); } catch (e) {} }
+  function localSave() { try { localStorage.setItem(KEY, JSON.stringify(questions)); } catch (e) {} }
+  function setNote(t) { $("store-note").textContent = t || ""; }
+  function errText(err) {
+    var c = err && err.code;
+    if (c === "quota_exceeded") return "The database is full. Delete some questions and try again.";
+    if (c === "invalid_argument") return "You can view this quiz but not change it. Ask the owner for edit access.";
+    return "Could not save. Check your connection and try again.";
+  }
+  /* Save one question: to the shared database when available, otherwise to this browser. */
+  function persist(rec) {
+    if (col) return col.doc(rec.id).set(rec);
+    var i = questions.findIndex(function (x) { return x.id === rec.id; });
+    if (i === -1) questions.push(rec); else questions[i] = rec;
+    localSave(); renderList();
+    return Promise.resolve();
+  }
+  function removeQuestion(id) {
+    pendingDelete = null;
+    if (editingId === id) resetForm();
+    if (col) {
+      col.doc(id).delete().catch(function (err) { setMsg(errText(err)); });
+      renderList();
+    } else {
+      questions = questions.filter(function (x) { return x.id !== id; });
+      localSave(); renderList();
+    }
+  }
+  function loadExamples() {
+    var base = Date.now();
+    var chain = Promise.resolve();
+    SAMPLES.forEach(function (s, i) {
+      var rec = clone(s); rec.id = uid(); rec.createdAt = base + i;
+      chain = chain.then(function () { return persist(rec); });
+    });
+    return chain.catch(function (err) { setMsg(errText(err)); });
+  }
+  function migrateLocal() {
+    /* One time: copy questions saved in this browser by the earlier version into the database. */
+    migrationDone = true;
+    var local = localLoad();
+    var mine = local ? local.filter(function (x) { return !x.sample; }) : [];
+    if (!mine.length) return;
+    var base = Date.now();
+    var chain = Promise.resolve();
+    mine.forEach(function (x, i) {
+      var rec = { id: uid(), q: x.q, opts: x.opts, correct: x.correct, exp: x.exp, createdAt: base + i };
+      chain = chain.then(function () { return col.doc(rec.id).set(rec); });
+    });
+    chain.then(function () { try { localStorage.removeItem(KEY); } catch (e) {} }, function () {});
+  }
   function uid() { return "q" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
   function el(tag, cls, text) { var n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
 
@@ -260,16 +310,18 @@ textarea { resize: vertical; min-height: 76px; }
     var empty = opts.findIndex(function (o) { return !o; });
     if (empty !== -1) { setMsg("Fill in option " + LETTERS[empty] + ". All four options are required."); $("opt" + empty).focus(); return; }
     if (!exp) { setMsg("Add an explanation so players learn why the answer is correct."); $("exp").focus(); return; }
-    if (editingId) {
-      var item = questions.find(function (x) { return x.id === editingId; });
-      item.q = q; item.opts = opts; item.correct = correct; item.exp = exp; delete item.sample;
-      setMsg("Question updated.", true);
-    } else {
-      questions.push({ id: uid(), q: q, opts: opts, correct: correct, exp: exp });
-      setMsg("Question added.", true);
-    }
-    save(); resetForm(); renderList();
-    $("q").focus();
+    var wasEditing = !!editingId;
+    var old = wasEditing ? questions.find(function (x) { return x.id === editingId; }) : null;
+    var rec = { id: old ? old.id : uid(), q: q, opts: opts, correct: correct, exp: exp, createdAt: (old && old.createdAt) || Date.now() };
+    var btn = $("save");
+    btn.disabled = true;
+    persist(rec).then(function () {
+      resetForm();
+      setMsg(wasEditing ? "Question updated." : "Question added.", true);
+      $("q").focus();
+    }, function (err) {
+      setMsg(errText(err));
+    }).then(function () { btn.disabled = false; });
   });
   $("cancel").addEventListener("click", function () { resetForm(); setMsg(""); renderList(); });
 
@@ -277,8 +329,17 @@ textarea { resize: vertical; min-height: 76px; }
     $("count").textContent = questions.length;
     var ul = $("list");
     ul.innerHTML = "";
+    if (loading) {
+      ul.appendChild(el("li", "empty", "Loading your questions…"));
+      $("start-top").disabled = true;
+      return;
+    }
     if (!questions.length) {
       var li = el("li", "empty", "No questions yet. Fill in the form to add your first one.");
+      var ex = el("div");
+      var exBtn = el("button", "btn small", "Load 3 example questions"); exBtn.type = "button";
+      exBtn.addEventListener("click", function () { exBtn.disabled = true; loadExamples(); });
+      ex.appendChild(exBtn); li.appendChild(ex);
       ul.appendChild(li);
       $("start-top").disabled = true;
       return;
@@ -300,11 +361,7 @@ textarea { resize: vertical; min-height: 76px; }
       if (pendingDelete === item.id) {
         acts.appendChild(el("span", "confirm-text", "Delete this question?"));
         var yes = el("button", "btn small danger", "Delete"); yes.type = "button";
-        yes.addEventListener("click", function () {
-          questions = questions.filter(function (x) { return x.id !== item.id; });
-          if (editingId === item.id) resetForm();
-          pendingDelete = null; save(); renderList();
-        });
+        yes.addEventListener("click", function () { removeQuestion(item.id); });
         var no = el("button", "btn small", "Keep"); no.type = "button";
         no.addEventListener("click", function () { pendingDelete = null; renderList(); });
         acts.appendChild(yes); acts.appendChild(no);
@@ -364,13 +421,13 @@ textarea { resize: vertical; min-height: 76px; }
         var tmp = order[i]; order[i] = order[j]; order[j] = tmp;
       }
     }
-    quiz = { order: order, pos: 0, picks: [], answered: false };
+    quiz = { items: questions.slice(), order: order, pos: 0, picks: [], answered: false };
     renderQuestion();
   }
   function renderQuestion() {
     var host = $("play");
     host.innerHTML = "";
-    var item = questions[quiz.order[quiz.pos]];
+    var item = quiz.items[quiz.order[quiz.pos]];
     var total = quiz.order.length;
 
     var prog = el("div", "progress");
@@ -418,7 +475,7 @@ textarea { resize: vertical; min-height: 76px; }
     }
   }
   function answer(i) {
-    var item = questions[quiz.order[quiz.pos]];
+    var item = quiz.items[quiz.order[quiz.pos]];
     quiz.picks[quiz.pos] = { choice: i, ok: i === item.correct };
     quiz.answered = true;
     renderQuestion();
@@ -434,7 +491,7 @@ textarea { resize: vertical; min-height: 76px; }
     host.appendChild(el("p", "sub", pct + "% correct"));
     var ul = el("ul", "review");
     quiz.order.forEach(function (qi, n) {
-      var item = questions[qi]; var p = quiz.picks[n];
+      var item = quiz.items[qi]; var p = quiz.picks[n];
       var li = el("li");
       li.appendChild(el("span", "mark " + (p.ok ? "ok" : "no"), p.ok ? "✓" : "✗"));
       var d = el("div");
@@ -453,9 +510,36 @@ textarea { resize: vertical; min-height: 76px; }
     host.appendChild(row);
   }
 
+  /* ---------- start up: shared database first, this browser as the fallback ---------- */
+  function useLocal() {
+    var saved = localLoad();
+    questions = saved || SAMPLES.map(clone);
+    loading = false; col = null;
+    setNote("Saved in this browser only.");
+    renderList();
+  }
+  function init() {
+    if (!window.claude || !window.claude.use) { useLocal(); return; }
+    window.claude.use("db").then(function (db) {
+      if (!db) { useLocal(); return; }
+      col = db.collection("questions");
+      col.orderBy("createdAt").onSnapshot(function (snap) {
+        questions = snap.docs.map(function (d) { return Object.assign({}, d.data(), { id: d.id }); });
+        loading = false;
+        if (editingId && !questions.some(function (x) { return x.id === editingId; })) { resetForm(); }
+        setNote("Saved to your quiz database, so your questions stay here across visits and devices.");
+        renderList();
+        if (snap.empty && !snap.metadata.fromCache && !migrationDone) migrateLocal();
+      }, function () {
+        if (loading) { useLocal(); } else { setNote("Connection lost. Showing the last loaded questions."); }
+      });
+    }, function () { useLocal(); });
+  }
+
   buildOptionRows();
   renderList();
+  init();
 })();
 </script>
-</body>
-</html>
+
+</body></html>
